@@ -48,3 +48,26 @@ func Main() error {
 	}
 	return nil
 }
+
+// func ensureRepoExists(repo string) error {
+
+// 	graphqlAddQuery := `query {
+//   repository(name: "github.com/beyang/tmp8") {
+//     id
+//     name
+//     mirrorInfo {
+//       cloned
+//       cloneProgress
+//       cloneInProgress
+//     }
+//     commit(rev: "HEAD") {
+//       id
+//     }
+//   }
+// }`
+
+// }
+
+// func addToIndex(repoid int) error {
+
+// }
