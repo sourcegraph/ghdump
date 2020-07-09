@@ -124,8 +124,8 @@ func Main() {
 					case params.minStars < 10000:
 						newParams.minStars++
 						newParams.page = 1
-						if lastStars-1 > newParams.minStars {
-							newParams.minStars = lastStars - 1
+						if lastStars > newParams.minStars {
+							newParams.minStars = lastStars
 						}
 						searchCh <- newParams
 					default:
@@ -152,6 +152,13 @@ func Main() {
 						time.Sleep(30 * time.Second)
 					}
 					return
+				}
+				if len(res.Repositories) == 0 {
+					log.Printf("No results for params %#v", params)
+					return
+				}
+				if starCount := res.Repositories[len(res.Repositories)-1].StargazersCount; starCount != nil {
+					lastStars = *starCount
 				}
 				outfile, err := os.Create(fp)
 				if err != nil {
