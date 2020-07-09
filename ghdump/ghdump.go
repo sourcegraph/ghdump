@@ -81,6 +81,10 @@ func getLatestParams(outDir string, language string) (*searchParams, error) {
 	return latestParams, nil
 }
 
+// Main pulls the first 1000 GitHub repositories with each star count, starting from 20 stars up to
+// 10000, writing these to files in the output directory. As the star count increases, the number of
+// repos at each level will obviously become sparser. The script will account for that in what API
+// requests it tries.
 func Main() {
 	const perPage = 100
 	outDir := "api_response_dump"
