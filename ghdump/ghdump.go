@@ -25,7 +25,7 @@ type searchParams struct {
 }
 
 func filename(p searchParams) string {
-	return fmt.Sprintf("lang-%s__star-%d__ppg-%d__pg-%d.json", p.language, p.minStars, p.perPage, p.page)
+	return fmt.Sprintf("lang-%s__star-%06d__ppg-%d__pg-%02d.json", p.language, p.minStars, p.perPage, p.page)
 }
 
 var paramsFromFilenameRegexp = regexp.MustCompile(`lang\-(?P<language>[^_]+)__star\-(?P<stars>[0-9]+)__ppg\-(?P<perPage>[0-9]+)__pg\-(?P<page>[0-9]+)\.json`)
@@ -113,9 +113,12 @@ func Main() {
 				params := params
 				lastStars := 0
 				retry := false
+				done := false
 				defer func() {
 					newParams := params
 					switch {
+					case done:
+						close(searchCh)
 					case retry:
 						searchCh <- params
 					case params.page < 10:
@@ -155,6 +158,7 @@ func Main() {
 				}
 				if len(res.Repositories) == 0 {
 					log.Printf("No results for params %#v", params)
+					done = true
 					return
 				}
 				if starCount := res.Repositories[len(res.Repositories)-1].StargazersCount; starCount != nil {
