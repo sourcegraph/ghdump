@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/google/go-github/github"
 )
@@ -35,45 +36,61 @@ func Main(filterText string) error {
 		}
 	}
 	sort.Sort(FileSorter(files))
-	for _, file := range files {
-		outFile := filepath.Join(outDir, file.Name())
-		if _, err := os.Stat(outFile); err == nil {
-			log.Printf("Skipping, file %s already exists", outFile)
-			continue
-		} else if !os.IsNotExist(err) {
-			log.Printf("Error stat'ing file %s: %s", outFile, err)
-			continue
-		}
+	parallelism := 5
+	fileCh := make(chan string)
+	var w sync.WaitGroup
+	w.Add(parallelism)
+	for i := 0; i < parallelism; i++ {
+		go func(gid int, fileCh <-chan string) {
+			for filename := range fileCh {
+				outFile := filepath.Join(outDir, filename)
+				if _, err := os.Stat(outFile); err == nil {
+					log.Printf("[Goroutine %d] Skipping, file %s already exists", gid, outFile)
+					continue
+				} else if !os.IsNotExist(err) {
+					log.Printf("[Goroutine %d] Error stat'ing file %s: %s", gid, outFile, err)
+					continue
+				}
 
-		f, err := os.Open(filepath.Join(inDir, file.Name()))
-		if err != nil {
-			log.Printf("Error reading file %s: %s", file, err)
-			continue
-		}
-		defer f.Close()
-		var result github.RepositoriesSearchResult
-		if err := json.NewDecoder(f).Decode(&result); err != nil {
-			log.Printf("Error parsing file %s JSON: %s", file, err)
-			continue
-		}
+				f, err := os.Open(filepath.Join(inDir, filename))
+				if err != nil {
+					log.Printf("[Goroutine %d] Error reading file %s: %s", gid, filename, err)
+					continue
+				}
+				defer f.Close()
+				var result github.RepositoriesSearchResult
+				if err := json.NewDecoder(f).Decode(&result); err != nil {
+					log.Printf("[Goroutine %d] Error parsing file %s JSON: %s", gid, filename, err)
+					continue
+				}
 
-		var repoErrs []string
-		repoNames := toRepoNames(result.Repositories)
-		traunches := toTraunches(repoNames, 10)
-		log.Printf("Processing file %s, errors: %d", file.Name(), len(repoErrs))
-		for i, repos := range traunches {
-			log.Printf("Traunch %d", i)
-			if err := bulkEnsureRepos(repos); err != nil {
-				repoErr := fmt.Sprintf("Failed to ensure repo traunch %v: %s", repos, err)
-				log.Print(repoErr)
-				repoErrs = append(repoErrs, repoErr)
+				var repoErrs []string
+				repoNames := toRepoNames(result.Repositories)
+				traunches := toTraunches(repoNames, 10)
+				log.Printf("[Goroutine %d] Processing file %s, errors: %d", gid, filename, len(repoErrs))
+				for i, repos := range traunches {
+					log.Printf("[Goroutine %d] File %s\ttraunch %d", gid, filename, i)
+					if err := bulkEnsureRepos(repos); err != nil {
+						repoErr := fmt.Sprintf("[Goroutine %d] Failed to ensure repo traunch %v for file %s: %s", gid, repos, filename, err)
+						log.Print(repoErr)
+						repoErrs = append(repoErrs, repoErr)
+					}
+				}
+
+				if err := ioutil.WriteFile(outFile, []byte(strings.Join(repoErrs, "\n")), 0644); err != nil {
+					log.Printf("[Goroutine %d] Error writing verification file %s: %s", gid, outFile, err)
+				}
+
+				w.Done()
 			}
-		}
-
-		if err := ioutil.WriteFile(outFile, []byte(strings.Join(repoErrs, "\n")), 0644); err != nil {
-			log.Printf("Error writing verification file %s: %s", outFile, err)
-		}
+		}(i, fileCh)
 	}
+	for _, file := range files {
+		fileCh <- file.Name()
+	}
+	close(fileCh)
+	w.Wait()
+
 	return nil
 }
 
