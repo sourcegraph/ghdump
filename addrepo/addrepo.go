@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/google/go-github/github"
@@ -33,6 +34,7 @@ func Main(filterText string) error {
 			}
 		}
 	}
+	sort.Sort(FileSorter(files))
 	for _, file := range files {
 		outFile := filepath.Join(outDir, file.Name())
 		if _, err := os.Stat(outFile); err == nil {
@@ -147,3 +149,9 @@ func bulkEnsureRepos(repos []string) error {
 	log.Printf("kubectl out: %s", string(out))
 	return nil
 }
+
+type FileSorter []os.FileInfo
+
+func (s FileSorter) Len() int           { return len(s) }
+func (s FileSorter) Less(i, j int) bool { return strings.Compare(s[i].Name(), s[j].Name()) > 0 }
+func (s FileSorter) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
