@@ -14,14 +14,24 @@ import (
 	"github.com/google/go-github/github"
 )
 
-func Main() error {
+func Main(filterText string) error {
 	const perPage = 100
 	inDir := "api_response_dump"
 	outDir := "added"
 
-	files, err := ioutil.ReadDir(inDir)
+	allFiles, err := ioutil.ReadDir(inDir)
 	if err != nil {
 		return err
+	}
+	var files []os.FileInfo
+	if filterText == "" {
+		files = allFiles
+	} else {
+		for _, file := range allFiles {
+			if strings.Contains(file.Name(), filterText) {
+				files = append(files, file)
+			}
+		}
 	}
 	for _, file := range files {
 		outFile := filepath.Join(outDir, file.Name())
@@ -46,7 +56,11 @@ func Main() error {
 		}
 
 		var repoErrs []string
-		for _, repos := range toTraunches(toRepoNames(result.Repositories), 10) {
+		repoNames := toRepoNames(result.Repositories)
+		traunches := toTraunches(repoNames, 10)
+		log.Printf("Processing file %s, errors: %d", file.Name(), len(repoErrs))
+		for i, repos := range traunches {
+			log.Printf("Traunch %d", i)
 			if err := bulkEnsureRepos(repos); err != nil {
 				repoErr := fmt.Sprintf("Failed to ensure repo traunch %v: %s", repos, err)
 				log.Print(repoErr)
@@ -76,8 +90,8 @@ func toTraunches(arr []string, traunchSize int) (traunches [][]string) {
 		return nil
 	}
 	traunches = make([][]string, 0, len(arr)/traunchSize+1)
-	for i := 0; i*traunchSize < len(arr); i += traunchSize {
-		if (i+1)*traunchSize > len(arr) {
+	for i := 0; i < len(arr); i += traunchSize {
+		if i+traunchSize > len(arr) {
 			traunches = append(traunches, arr[i:])
 		} else {
 			traunches = append(traunches, arr[i:i+traunchSize])
@@ -129,6 +143,7 @@ func bulkEnsureRepos(repos []string) error {
 	if err != nil {
 		return err
 	}
+	log.Printf("Inserted into default_repos: %v", repos)
 	log.Printf("kubectl out: %s", string(out))
 	return nil
 }
