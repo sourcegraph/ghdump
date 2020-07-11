@@ -38,8 +38,8 @@ func Main(filterText string) error {
 	sort.Sort(FileSorter(files))
 	parallelism := 5
 	fileCh := make(chan string)
-	var w sync.WaitGroup
-	w.Add(parallelism)
+	var wg sync.WaitGroup
+	wg.Add(parallelism)
 	for i := 0; i < parallelism; i++ {
 		go func(gid int, fileCh <-chan string) {
 			for filename := range fileCh {
@@ -81,15 +81,15 @@ func Main(filterText string) error {
 					log.Printf("[Goroutine %d] Error writing verification file %s: %s", gid, outFile, err)
 				}
 
-				w.Done()
 			}
+			wg.Done()
 		}(i, fileCh)
 	}
 	for _, file := range files {
 		fileCh <- file.Name()
 	}
 	close(fileCh)
-	w.Wait()
+	wg.Wait()
 
 	return nil
 }
