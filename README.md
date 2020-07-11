@@ -1,6 +1,7 @@
 ## Usage
 
 Run the script that pulls all repositories of greater than 20 stars of each major language from GitHub API:
+
 ```
 GITHUB_ACCESS_TOKEN=<token> GO111MODULE=off go run main.go
 ```
@@ -12,10 +13,12 @@ Note: the GitHub search API limits total results for any given query to 1000, so
 counts, we only get the first 1000 repositories with that star count. This is fine for now.
 
 Once you've collected some number of files in `api_response_dump`, run the script to add these
-repositories to Sourcegraph, ensure they're queued for cloning, and added to the global search
-index:
+repositories to Sourcegraph (in order of highest star count first), ensure they're queued for
+cloning, and added to the global search index:
+
 ```
 GO111MODULE=off go run main.go add <file_filter_text>
+# Example to add all Python repos: GO111MODULE=off go run main.go add python
 ```
 
 Once the repositories from a given file in `api_response_dump/` have been added, this script will
