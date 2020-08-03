@@ -4,8 +4,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/beyang/ghdump/addrepo"
-	"github.com/beyang/ghdump/ghdump"
+	"github.com/sourcegraph/ghdump/addrepo"
+	"github.com/sourcegraph/ghdump/ghdump"
 )
 
 func main() {
