@@ -1,8 +1,5 @@
 ### This is the list of the 100000 repo_id's that were culled from default_repos in response to
 ### https://github.com/sourcegraph/sourcegraph/issues/13105#issuecomment-686772964
-
- repo_id  
-----------
  41762096
  41682110
  41682109
@@ -100003,5 +100000,3 @@
  40263594
  40263587
  40263586
-(100000 rows)
-
