@@ -14,7 +14,7 @@ func main() {
 		if len(os.Args) >= 3 {
 			filterText = os.Args[2]
 		}
-		if err := addrepo.Main(filterText); err != nil {
+		if err := addrepo.Main(filterText, true); err != nil {
 			log.Fatal(err)
 		}
 		return

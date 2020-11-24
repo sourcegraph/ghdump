@@ -14,9 +14,10 @@ import (
 	"sync"
 
 	"github.com/google/go-github/github"
+	"github.com/pkg/errors"
 )
 
-func Main(filterText string) error {
+func Main(filterText string, printOnly bool) error {
 	const perPage = 100
 	inDir := "api_response_dump"
 	outDir := "added"
@@ -70,13 +71,16 @@ func Main(filterText string) error {
 				log.Printf("[Goroutine %d] Processing file %s, errors: %d", gid, filename, len(repoErrs))
 				for i, repos := range traunches {
 					log.Printf("[Goroutine %d] File %s\ttraunch %d", gid, filename, i)
-					if err := bulkEnsureRepos(repos); err != nil {
-						repoErr := fmt.Sprintf("[Goroutine %d] Failed to ensure repo traunch %v for file %s: %s", gid, repos, filename, err)
+					if err := bulkEnsureRepos(repos, printOnly); err != nil {
+						repoErr := fmt.Sprintf("[Goroutine %d] Failed to ensure repo traunch %v for file %s:\n\t%s", gid, repos, filename, err)
 						log.Print(repoErr)
 						repoErrs = append(repoErrs, repoErr)
 					}
 				}
 
+				if printOnly {
+					continue
+				}
 				if err := ioutil.WriteFile(outFile, []byte(strings.Join(repoErrs, "\n")), 0644); err != nil {
 					log.Printf("[Goroutine %d] Error writing verification file %s: %s", gid, outFile, err)
 				}
@@ -119,7 +123,7 @@ func toTraunches(arr []string, traunchSize int) (traunches [][]string) {
 	return traunches
 }
 
-func bulkEnsureRepos(repos []string) error {
+func bulkEnsureRepos(repos []string, printOnly bool) error {
 	gqlParts := make([]string, len(repos))
 	for i := 0; i < len(repos); i++ {
 		gqlParts[i] = fmt.Sprintf(`r%d:repository(name: %q) {
@@ -140,14 +144,14 @@ func bulkEnsureRepos(repos []string) error {
 	reqBody := fmt.Sprintf(`{ "query": %q }`, gqlQuery)
 	req, err := http.NewRequest("POST", "https://sourcegraph.com/.api/graphql", strings.NewReader(reqBody))
 	if err != nil {
-		return err
+		return errors.Wrap(err, "request")
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "graphql")
 	}
 	if _, err := ioutil.ReadAll(resp.Body); err != nil {
-		return err
+		return errors.Wrap(err, "response")
 	}
 
 	sqlParts := make([]string, len(repos))
@@ -157,13 +161,17 @@ func bulkEnsureRepos(repos []string) error {
 	sqlRepoNames := "(" + strings.Join(sqlParts, ", ") + ")"
 	sqlQuery := `insert into default_repos(repo_id) select id from repo where name in ` + sqlRepoNames + ` and not exists (select * from default_repos where default_repos.repo_id=repo.id)`
 	bashCmd := fmt.Sprintf(`kubectl -nprod exec $(kubectl -nprod get pod -l app=pgsql -o jsonpath="{.items[0].metadata.name}") -- psql -t -U sg -c %q`, sqlQuery)
-	cmd := exec.Command("bash", "-c", bashCmd)
-	out, err := cmd.Output()
-	if err != nil {
-		return err
+	if printOnly {
+		fmt.Println("BASH: " + bashCmd)
+	} else {
+		cmd := exec.Command("bash", "-c", bppashCmd)
+		out, err := cmd.Output()
+		if err != nil {
+			return errors.Wrap(err, "bash")
+		}
+		log.Printf("Inserted into default_repos: %v", repos)
+		log.Printf("kubectl out: %s", string(out))
 	}
-	log.Printf("Inserted into default_repos: %v", repos)
-	log.Printf("kubectl out: %s", string(out))
 	return nil
 }
 
