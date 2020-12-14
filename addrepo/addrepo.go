@@ -45,9 +45,6 @@ func Main(filterText string, printOnly bool) error {
 	for i := 0; i < parallelism; i++ {
 		go func(gid int, fileCh <-chan string) {
 			for filename := range fileCh {
-				// Throttle to at most 1 per second (3600 per hour, 5000 GitHub API requests/hr max)
-				time.Sleep(1 * time.Second)
-
 				outFile := filepath.Join(outDir, filename)
 				if _, err := os.Stat(outFile); err == nil {
 					log.Printf("[Goroutine %d] Skipping, file %s already exists", gid, outFile)
@@ -89,6 +86,8 @@ func Main(filterText string, printOnly bool) error {
 					log.Printf("[Goroutine %d] Error writing verification file %s: %s", gid, outFile, err)
 				}
 
+				// Throttle to at most 1 per second (3600 per hour, 5000 GitHub API requests/hr max)
+				time.Sleep(1 * time.Second)
 			}
 			wg.Done()
 		}(i, fileCh)
