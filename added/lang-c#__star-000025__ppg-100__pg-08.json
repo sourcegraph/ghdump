@@ -1,0 +1,4 @@
+[Goroutine 0] Failed to ensure repo traunch [hyperledger/aries-framework-dotnet ajtowf/OfficeCacheCleaner yonstorm/ProjectRider-Unity jean80it/DephtInition FamilySearch/gedcomx-csharp FuzzySecurity/DotNetToJScript-LanguageModeBreakout RivelloMultimediaConsulting/CodeSamplesPublic ovflowd/yupi mushroomsir/HRedis lukesampson/HastyAPI] for file lang-c#__star-000025__ppg-100__pg-08.json:
+	bash: exit status 1
+[Goroutine 0] Failed to ensure repo traunch [GeertBellekens/UML-Tooling-Framework erikdietrich/ChessTDD mydlp/mydlp-endpoint-win johnshew/Minimal-UWP-MVVM-CRUD keif888/SSISMHash elmahio/Elmah.Io.Extensions.Logging microsoft/healthvault-fhir-library Kartavec/snake jonathanpeppers/XamChat Ant-f/WorkingFilesList] for file lang-c#__star-000025__ppg-100__pg-08.json:
+	bash: exit status 1
