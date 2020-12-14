@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/go-github/github"
 	"github.com/pkg/errors"
@@ -37,13 +38,16 @@ func Main(filterText string, printOnly bool) error {
 		}
 	}
 	sort.Sort(FileSorter(files))
-	parallelism := 5
+	parallelism := 1
 	fileCh := make(chan string)
 	var wg sync.WaitGroup
 	wg.Add(parallelism)
 	for i := 0; i < parallelism; i++ {
 		go func(gid int, fileCh <-chan string) {
 			for filename := range fileCh {
+				// Throttle to at most 1 per second (3600 per hour, 5000 GitHub API requests/hr max)
+				time.Sleep(1 * time.Second)
+
 				outFile := filepath.Join(outDir, filename)
 				if _, err := os.Stat(outFile); err == nil {
 					log.Printf("[Goroutine %d] Skipping, file %s already exists", gid, outFile)
