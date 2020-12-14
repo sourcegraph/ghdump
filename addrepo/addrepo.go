@@ -37,7 +37,7 @@ func Main(filterText string, printOnly bool) error {
 		}
 	}
 	sort.Sort(FileSorter(files))
-	parallelism := 1
+	parallelism := 5
 	fileCh := make(chan string)
 	var wg sync.WaitGroup
 	wg.Add(parallelism)
