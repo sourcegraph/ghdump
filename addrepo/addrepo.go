@@ -101,7 +101,7 @@ func Main(filterText string, printOnly bool) error {
 	return nil
 }
 
-func toRepoNames(repos []*github.Repository) []string {
+func toRepoNames(repos []github.Repository) []string {
 	repoNames := make([]string, 0, len(repos))
 	for _, repo := range repos {
 		if repo.FullName != nil {

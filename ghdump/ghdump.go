@@ -88,7 +88,29 @@ func getLatestParams(outDir string, language string) (*searchParams, error) {
 func Main() {
 	const perPage = 100
 	outDir := "api_response_dump"
-	languages := []string{"javascript", "java", "python", "php", "ruby", "c#", "c++", "c", "shell", "objective-c", "go", "swift", "scala", "rust", "kotlin"}
+	languages := []string{
+		"javascript",
+		"typescript",
+		"html",
+		"css",
+		"java",
+		"python",
+		"php",
+		"ruby",
+		"c#",
+		"c++",
+		"c",
+		"shell",
+		"objective-c",
+		"go",
+		"swift",
+		"scala",
+		"rust",
+		"kotlin",
+		"haskell",
+		"clojure",
+		"ocaml",
+	}
 
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
@@ -124,7 +146,7 @@ func Main() {
 					case params.page < 10:
 						newParams.page++
 						searchCh <- newParams
-					case params.minStars < 10000:
+					case params.minStars < 100000:
 						newParams.minStars++
 						newParams.page = 1
 						if lastStars > newParams.minStars {
