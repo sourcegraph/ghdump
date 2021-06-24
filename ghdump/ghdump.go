@@ -148,13 +148,16 @@ const minStars = 13
 func (s *Search) Next() bool {
 	s.Cursor = nil
 	switch {
-	case s.Created != (DateRange{}) && !s.Created.From.Before(minCreated):
+	case s.Created != (DateRange{}) && s.Created.From.After(minCreated):
 		size := s.Created.Size()
 		s.Created.To = s.Created.From
 		if s.Created.From = s.Created.To.Add(-size); s.Created.From.Before(minCreated) {
 			s.Created.From = minCreated
 		}
 		return true
+	case s.Created.From.Equal(minCreated):
+		s.Created = newTopDateRange()
+		fallthrough
 	case s.Stars != (StarRange{}) && s.Stars.From > minStars:
 		size := s.Stars.Size()
 		s.Stars.To = s.Stars.From
@@ -166,6 +169,14 @@ func (s *Search) Next() bool {
 	return false
 }
 
+func newTopDateRange() DateRange {
+	now := time.Now()
+	return DateRange{
+		From: now.AddDate(-2, 0, 0),
+		To: now,
+	}
+}
+
 // Refine does one pass at refining the search to match <= 1000 repos.
 func (s *Search) Refine() bool {
 	if size := s.Stars.Size(); size > 1 {
@@ -174,8 +185,7 @@ func (s *Search) Refine() bool {
 	}
 
 	if s.Created == (DateRange{}) {
-		s.Created.To = time.Now()
-		s.Created.From = s.Created.To.AddDate(-1,0, 0)
+		s.Created = newTopDateRange()
 		return true
 	}
 
