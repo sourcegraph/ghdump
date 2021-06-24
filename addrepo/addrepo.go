@@ -152,7 +152,14 @@ func bulkEnsureRepos(repos []string, printOnly bool) error {
 	if err != nil {
 		return errors.Wrap(err, "graphql")
 	}
-	if _, err := ioutil.ReadAll(resp.Body); err != nil {
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return errors.New("non 200 status code from sourcegraph")
+	}
+
+	_, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
 		return errors.Wrap(err, "response")
 	}
 
