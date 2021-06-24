@@ -150,7 +150,7 @@ func (s *Search) Next() bool {
 	switch {
 	case s.Created != (DateRange{}) && s.Created.From.After(minCreated):
 		size := s.Created.Size()
-		s.Created.To = s.Created.From
+		s.Created.To = s.Created.From.AddDate(0, 0, -1)
 		if s.Created.From = s.Created.To.Add(-size); s.Created.From.Before(minCreated) {
 			s.Created.From = minCreated
 		}
@@ -160,7 +160,7 @@ func (s *Search) Next() bool {
 		fallthrough
 	case s.Stars != (StarRange{}) && s.Stars.From > minStars:
 		size := s.Stars.Size()
-		s.Stars.To = s.Stars.From
+		s.Stars.To = s.Stars.From - 1
 		if s.Stars.From = s.Stars.To - size; s.Stars.From < minStars {
 			s.Stars.From = minStars
 		}
