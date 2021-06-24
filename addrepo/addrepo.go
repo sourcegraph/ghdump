@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -157,28 +156,6 @@ func bulkEnsureRepos(repos []string, printOnly bool) error {
 		return errors.Wrap(err, "response")
 	}
 
-	sqlParts := make([]string, len(repos))
-	for i := 0; i < len(repos); i++ {
-		sqlParts[i] = fmt.Sprintf(`'github.com/%s'`, repos[i])
-	}
-	sqlRepoNames := "(" + strings.Join(sqlParts, ", ") + ")"
-	sqlQuery := `insert into default_repos(repo_id) select id from repo where name in ` + sqlRepoNames + ` and not exists (select * from default_repos where default_repos.repo_id=repo.id)`
-	bashCmd := fmt.Sprintf(`psql -h localhost -p 5555 -d sg -U dev -t -c %q`, sqlQuery)
-	if printOnly {
-		fmt.Println("BASH: " + bashCmd)
-	} else {
-		if _, isPGPassSet := os.LookupEnv("PGPASSWORD"); !isPGPassSet {
-			return errors.New("PGPASSWORD wasn't set. Ensure PGPASSWORD is set and you are running cloud_sql_proxy (https://about.sourcegraph.com/handbook/engineering/deployments/postgresql#proxy-for-advanced-use).")
-		}
-
-		cmd := exec.Command("bash", "-c", bashCmd)
-		out, err := cmd.Output()
-		if err != nil {
-			return errors.Wrap(err, "bash")
-		}
-		log.Printf("Inserted into default_repos: %v", repos)
-		log.Printf("insertion command out: %s", string(out))
-	}
 	return nil
 }
 
