@@ -158,7 +158,7 @@ func bulkEnsureRepos(repos []string, printOnly bool) error {
 		return errors.New("non 200 status code from sourcegraph")
 	}
 
-	_, err := ioutil.ReadAll(resp.Body)
+	_, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return errors.Wrap(err, "response")
 	}

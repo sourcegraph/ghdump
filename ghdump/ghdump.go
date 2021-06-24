@@ -4,259 +4,216 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
-	"path/filepath"
-	"regexp"
-	"strconv"
+	"sort"
 	"strings"
 	"time"
 
-	"github.com/google/go-github/github"
+	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 )
 
-type searchParams struct {
-	language string
-	minStars int
-	perPage  int
-	page     int
-}
-
-func filename(p searchParams) string {
-	return fmt.Sprintf("lang-%s__star-%06d__ppg-%d__pg-%02d.json", p.language, p.minStars, p.perPage, p.page)
-}
-
-var paramsFromFilenameRegexp = regexp.MustCompile(`lang\-(?P<language>[^_]+)__star\-(?P<stars>[0-9]+)__ppg\-(?P<perPage>[0-9]+)__pg\-(?P<page>[0-9]+)\.json`)
-
-func paramsFromFilename(fn string) *searchParams {
-	matches := paramsFromFilenameRegexp.FindStringSubmatch(fn)
-	if len(matches) == 0 {
-		return nil
-	}
-	minStars, _ := strconv.Atoi(matches[2])
-	perPage, _ := strconv.Atoi(matches[3])
-	page, _ := strconv.Atoi(matches[4])
-	return &searchParams{
-		language: matches[1],
-		minStars: minStars,
-		perPage:  perPage,
-		page:     page,
-	}
-
-}
-
-func ghquery(p searchParams) string {
-	return fmt.Sprintf("language:%s stars:>=%d", p.language, p.minStars)
-}
-
-func getLatestParams(outDir string, language string) (*searchParams, error) {
-	files, err := ioutil.ReadDir(outDir)
-	if err != nil {
-		return nil, err
-	}
-
-	latestParams := &searchParams{language: language, minStars: 20, page: 1, perPage: 100}
-	for _, file := range files {
-		params := paramsFromFilename(file.Name())
-		if params == nil {
-			continue
-		}
-		if params.language != language {
-			continue
-		}
-		if params.perPage != latestParams.perPage {
-			continue
-		}
-		if params.minStars > latestParams.minStars {
-			latestParams = params
-			continue
-		}
-		if params.minStars == latestParams.minStars && params.page > latestParams.page {
-			latestParams = params
-			continue
-		}
-	}
-	return latestParams, nil
-}
-
-// Main pulls the first 1000 GitHub repositories with each star count, starting from 20 stars up to
-// 10000, writing these to files in the output directory. As the star count increases, the number of
-// repos at each level will obviously become sparser. The script will account for that in what API
-// requests it tries.
 func Main() {
-	const perPage = 100
-	outDir := "api_response_dump"
-	languages := []string{
-		"javascript",
-		"typescript",
-		"html",
-		"css",
-		"java",
-		"python",
-		"php",
-		"ruby",
-		"c#",
-		"c++",
-		"c",
-		"shell",
-		"objective-c",
-		"go",
-		"swift",
-		"scala",
-		"rust",
-		"kotlin",
-		"haskell",
-		"clojure",
-		"ocaml",
-	}
-
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: os.Getenv("GITHUB_ACCESS_TOKEN")},
 	)
 	tc := oauth2.NewClient(ctx, ts)
-	client := github.NewClient(tc)
+	client := githubv4.NewClient(tc)
 
-	for _, language := range languages {
-		searchCh := make(chan searchParams, 100)
+	var search Search
 
-		startParams, err := getLatestParams(outDir, language)
-		if err != nil {
-			log.Printf("Error getting latest params for language %s: %s", language, err)
-			continue
+	if data, err := os.ReadFile("search.json"); err != nil {
+		if !os.IsNotExist(err) {
+			log.Fatal(err)
 		}
-		log.Printf("Start params: %#v", *startParams)
-		searchCh <- *startParams
+	} else if err := json.Unmarshal(data, &search); err != nil {
+		log.Fatal(err)
+	}
 
-		for params := range searchCh {
-			func() {
-				params := params
-				lastStars := 0
-				retry := false
-				done := false
-				defer func() {
-					newParams := params
-					switch {
-					case done:
-						close(searchCh)
-					case retry:
-						searchCh <- params
-					case params.page < 10:
-						newParams.page++
-						searchCh <- newParams
-					case params.minStars < 100000:
-						newParams.minStars++
-						newParams.page = 1
-						if lastStars > newParams.minStars {
-							newParams.minStars = lastStars
-						}
-						searchCh <- newParams
-					default:
-						close(searchCh)
+	if search == (Search{}) {
+		search.Stars = StarRange{From: 200_000, To: 400_000}
+	}
+
+	type query struct {
+		RateLimit struct {
+			ResetAt githubv4.DateTime
+			Remaining githubv4.Int
+		}
+		Search struct {
+			RepositoryCount githubv4.Int
+			PageInfo        struct {
+				HasNextPage githubv4.Boolean
+				EndCursor   githubv4.String
+			}
+			Nodes []struct {
+				Repository struct {
+					NameWithOwner   githubv4.String
+					PrimaryLanguage struct {
+						Name githubv4.String
 					}
-				}()
+					StargazerCount githubv4.Int
+				} `graphql:"... on Repository"`
+			}
+		} `graphql:"search(query: $query, type: $type, first: $first, after: $after)"`
+	}
 
-				log.Printf("params: %v", params)
-				fp := filepath.Join(outDir, filename(params))
+	for {
+		var q query
+		vars := map[string]interface{}{
+			"query": githubv4.String(search.Query()),
+			"type":  githubv4.SearchTypeRepository,
+			"first": githubv4.Int(100),
+			"after": search.Cursor,
+		}
 
-				res, _, err := client.Search.Repositories(ctx, ghquery(params), &github.SearchOptions{
-					Sort:  "stars",
-					Order: "asc",
-					ListOptions: github.ListOptions{
-						Page:    params.page,
-						PerPage: params.perPage,
-					},
-				})
-				if err != nil {
-					log.Printf("GitHub API error: %s", err)
-					if strings.Contains(err.Error(), "rate limit") {
-						log.Printf("Sleeping for 30 seconds before retrying")
-						retry = true
-						time.Sleep(30 * time.Second)
-					}
-					return
-				}
-				if len(res.Repositories) == 0 {
-					log.Printf("No results for params %#v", params)
-					done = true
-					return
-				}
-				if starCount := res.Repositories[len(res.Repositories)-1].StargazersCount; starCount != nil {
-					lastStars = *starCount
-				}
-				outfile, err := os.Create(fp)
-				if err != nil {
-					log.Printf("Error creating outfile: %s", err)
-					return
-				}
-				defer outfile.Close()
-				if err := json.NewEncoder(outfile).Encode(res); err != nil {
-					log.Printf("Error encoding JSON: %s", err)
-					return
-				}
-			}()
+		began := time.Now()
+
+		err := client.Query(context.Background(), &q, vars)
+		if err != nil {
+			log.Fatalf("Query error: %v", err)
+		}
+
+
+		log.Printf("INFO: Got %d repos matching %s, took %s with remaining rate limit of %d",
+			len(q.Search.Nodes), search, time.Since(began), q.RateLimit.Remaining)
+
+		switch {
+		case q.RateLimit.Remaining == 0:
+			log.Printf("WARNING: Exhausted GitHub rate limit, sleeping until %s", q.RateLimit.ResetAt)
+			time.Sleep(q.RateLimit.ResetAt.Sub(time.Now()))
+		case q.Search.RepositoryCount > 1000: // GitHub's Search API limit
+			log.Printf("WARNING: Search %q yielded more than 1000 results, refining search and retrying", search)
+			if search.Refine() {
+				log.Printf("INFO: Refined search to %q", search)
+				continue
+			} else {
+				log.Printf("WARNING: Couldn't refine search %q further. Some repos will be missed.", search)
+			}
+		}
+
+		for _, n := range q.Search.Nodes {
+			r := n.Repository
+			fmt.Printf("github.com/%s,%s,%d\n", r.NameWithOwner, r.PrimaryLanguage.Name, r.StargazerCount)
+		}
+
+		if q.Search.PageInfo.HasNextPage {
+			search.Cursor = &q.Search.PageInfo.EndCursor
+		} else if !search.Next() {
+			break
+		}
+
+		data, err := json.Marshal(search)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if err = os.WriteFile("search.json", data, 0666); err != nil {
+			log.Fatal(err)
 		}
 	}
 }
 
-// ################################
-// GraphQL
-// ################################
+type DateRange struct{ From, To time.Time }
 
-// func main() {
-// 	// const perPage = 100
-// 	// languages := []string{"javascript"}
-// 	// for _, language := range languages {
-// 	// }
+const dateFormat = "2006-01-02"
 
-// 	src := oauth2.StaticTokenSource(
-// 		&oauth2.Token{AccessToken: secretToken},
-// 	)
-// 	httpClient := oauth2.NewClient(context.Background(), src)
-// 	client := githubv4.NewClient(httpClient)
+func (r DateRange) String() string {
+	return fmt.Sprintf("%s..%s",
+		r.From.Format(dateFormat),
+		r.To.Format(dateFormat),
+	)
+}
 
-// 	cursor := (*githubv4.String)(nil)
-// 	for i := 0; i < 11; i++ {
-// 		var query struct {
-// 			Search struct {
-// 				RepositoryCount githubv4.Int
-// 				Edges           []struct {
-// 					Cursor githubv4.String
-// 					Node   struct {
-// 						Repository struct {
-// 							NameWithOwner githubv4.String
-// 							Stargazers    struct {
-// 								TotalCount githubv4.Int
-// 							}
-// 						} `graphql:"... on Repository"`
-// 					}
-// 				}
-// 			} `graphql:"search(query: $query, type: $type, first: $first, after: $after)"`
-// 		}
-// 		variables := map[string]interface{}{
-// 			"query": githubv4.String("test"),
-// 			"type":  githubv4.SearchTypeRepository,
-// 			"first": githubv4.Int(100),
-// 			"after": cursor,
-// 		}
-// 		err := client.Query(context.Background(), &query, variables)
-// 		if err != nil {
-// 			log.Fatalf("Query error: %v", err)
-// 		}
+func (r DateRange) Size() time.Duration { return r.To.Sub(r.From) }
 
-// 		// Print results
-// 		if cursor != nil {
-// 			log.Printf("# cursor: %v", *cursor)
-// 		}
-// 		// for _, res := range query.Search.Edges {
-// 		// 	fmt.Printf("%s: %d\n", res.Node.Repository.NameWithOwner, res.Node.Repository.Stargazers.TotalCount)
-// 		// }
-// 		if len(query.Search.Edges) == 0 {
-// 			break
-// 		}
-// 		nextCursor := query.Search.Edges[len(query.Search.Edges)-1].Cursor
-// 		cursor = &nextCursor
-// 	}
-// }
+type StarRange struct{ From, To int }
+
+func (r StarRange) String() string {
+	return fmt.Sprintf("%d..%d", r.From, r.To)
+}
+
+func (r StarRange) Size() int { return r.To - r.From }
+
+type Search struct {
+	Stars   StarRange
+	Created DateRange
+	Cursor   *githubv4.String
+}
+
+var minCreated = time.Date(2008, time.January, 1, 0, 0, 0, 0, time.UTC)
+const minStars = 13
+
+func (s *Search) Next() bool {
+	s.Cursor = nil
+	switch {
+	case s.Created != (DateRange{}) && !s.Created.From.Before(minCreated):
+		size := s.Created.Size()
+		s.Created.To = s.Created.From
+		if s.Created.From = s.Created.To.Add(-size); s.Created.From.Before(minCreated) {
+			s.Created.From = minCreated
+		}
+		return true
+	case s.Stars != (StarRange{}) && s.Stars.From > minStars:
+		size := s.Stars.Size()
+		s.Stars.To = s.Stars.From
+		if s.Stars.From = s.Stars.To - size; s.Stars.From < minStars {
+			s.Stars.From = minStars
+		}
+		return true
+	}
+	return false
+}
+
+// Refine does one pass at refining the search to match <= 1000 repos.
+func (s *Search) Refine() bool {
+	if size := s.Stars.Size(); size > 1 {
+		s.Stars.From += size / 2
+		return true
+	}
+
+	if s.Created == (DateRange{}) {
+		s.Created.To = time.Now()
+		s.Created.From = s.Created.To.AddDate(-1,0, 0)
+		return true
+	}
+
+	if size := s.Created.Size(); size >= 48 * time.Hour {
+		s.Created.From = s.Created.From.Add(s.Created.Size() / 2)
+		return true
+	}
+
+	// Can't refine beyond a single day.
+	return false
+}
+
+func (s Search) Query() string {
+	return strings.Join(s.terms(), " ")
+}
+
+func (s Search) String() string {
+	terms := s.terms()
+
+	if s.Cursor != nil {
+		terms = append(terms, "cursor:" + (string)(*s.Cursor))
+	}
+
+	return strings.Join(terms, " ")
+}
+
+func (s Search) terms() []string {
+	terms := []string{"sort:stars-desc"}
+
+	if s.Stars != (StarRange{}) {
+		terms = append(terms, fmt.Sprintf("stars:%s", s.Stars))
+	}
+
+	if s.Created != (DateRange{}) {
+		terms = append(terms, fmt.Sprintf("created:%s", s.Created))
+	}
+
+	sort.Strings(terms)
+
+	return terms
+}
